@@ -3,56 +3,52 @@ import re
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
-class ProjectValidator(serializers.Serializer):
+def validate_password(password):
+    if not 8 <= len(password) <= 15:
+        raise ValidationError(_('Password must be between 8 and 20 characters long.'), code='password_length')
 
-    # # fields
-    # owner = serializers.CharField(max_length=50, required=True, allow_blank=False, error_messages={
-    #     'required': 'Owner is required',
-    #     'blank': 'Owner field cannot be empty',
-    # })
-    name = serializers.CharField(max_length=50, required=True, allow_null=False, error_messages={
-        'required': 'Project name is required field',
-        'blank': 'Project name field cannot be empty'
-    })
-    description = serializers.CharField(max_length=500, required=True, allow_blank=False, error_messages={
-        'required': 'Project description is a required field.',
-        'blank': 'Project description field cannot be empty.',
-    })
+    password_regex = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$'
+    if not re.match(password_regex, password):
+        raise ValidationError(_('Password must contain at least one lowercase letter, one uppercase letter, one number, and one special character.'), code='password_complexity')
 
+class UserRegisterValidator(serializers.Serializer):
 
-class CommentValidator(serializers.Serializer):
-    content = serializers.CharField(max_length=500, required=True, allow_blank=False, error_messages={
-        'required': 'Content is required',
-        'blank': 'Content field cannot be empty',
+    # fields
+    email = serializers.EmailField(required=True, allow_blank=False, error_messages={
+        'required': 'Email is required',
+        'blank': 'Email field cannot be empty',
     })
-
-class TaskValidator(serializers.Serializer):
-
-    # # fields
-    assign_to = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    # project = serializers.CharField(max_length=50, required=True, allow_blank=False, error_messages={
-    #     'required': 'Project is required',
-    #     'blank': 'Project field cannot be empty',
-    # })
-    title = serializers.CharField(max_length=50, required=True, allow_null=False, error_messages={
-        'required': 'Task title is required field',
-        'blank': 'Task title field cannot be empty'
+    password = serializers.CharField(max_length=20, required=True, allow_null=False, allow_blank=False, error_messages={
+        'required': 'Password is required field',
+        'null': 'password cannot be null',
+        'blank': 'Password field cannot be empty'
+    },validators=[validate_password])
+    first_name = serializers.CharField(max_length=100, required=True, allow_blank=False, error_messages={
+        'required': 'First Name is a required field.',
+        'blank': 'First Name field cannot be empty.',
     })
-    status = serializers.CharField(max_length=50, required=True, allow_null=False, error_messages={
-        'required': 'Task status is required field',
-        'blank': 'Task status field cannot be empty'
+    last_name = serializers.CharField(max_length=100, required=True, allow_blank=False, error_messages={
+        'required': 'Last Name is a required field.',
+        'blank': 'Last Name field cannot be empty.',
     })
-    priority = serializers.CharField(max_length=50, required=True, allow_null=False, error_messages={
-        'required': 'Task priority is required field',
-        'blank': 'Task priority field cannot be empty'
-    })
-    description = serializers.CharField(max_length=500, required=True, allow_blank=False, error_messages={
-        'required': 'Task description is a required field.',
-        'blank': 'Task description field cannot be empty.',
-    })
-    due_date = serializers.DateField(required=True, allow_null=False,error_messages={
-        'required': 'Task due date is a required field.',
-        'blank': 'Task due date field cannot be empty.',
+    username = serializers.CharField(max_length=100, required=True, allow_blank=False, error_messages={
+        'required': 'User Name is a required field.',
+        'blank': 'User Name field cannot be empty.',
     })
 
-
+class UserLoginValidator(serializers.Serializer):
+    email = serializers.EmailField(required=True, allow_null=False, allow_blank=False, error_messages={
+        'required': 'Email is required field',
+        'null': 'email cannot be null',
+        'blank': 'Email field cannot be empty'
+    })
+    password = serializers.CharField(max_length=20, required=True, allow_null=False, allow_blank=False, error_messages={
+        'required': 'Password is required field',
+        'null': 'password cannot be null',
+        'blank': 'Password field cannot be empty'
+    },validators=[validate_password])
+    
+class ProfileUpdateValidator(serializers.Serializer):
+    first_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    date_joined = serializers.DateField(required=False, allow_null=True)

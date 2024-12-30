@@ -3,66 +3,99 @@ from core.response import Response
 from .import serializers
 from . import validators
 from core.exceptions import SerializerError
+from django.contrib.auth import authenticate, login
+from core import general
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
-from . import validators
-from . import serializers
+from rest_framework import status
 from . import models
+from django.db.models import Q
 
-# Create your views here.
-class Projects(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+class UserLoginView(APIView):
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request):
         context = {
             "success": 1,
-            "message": "Project created successful",
+            "message": "User logged in successfully",
+            "data": {}
+        }
+        try:
+            # Validate the input
+            validator = validators.UserLoginValidator(data=request.data)
+            if not validator.is_valid():
+                raise SerializerError(validator.errors)
+
+            # Authenticate the user
+            req_params = validator.validated_data
+            auth_user = authenticate(request, username=req_params['email'], password=req_params['password'])
+            print("Authenticated user:", auth_user)
+
+            # Check if the user is authenticated
+            if auth_user is not None:
+                if not auth_user.is_active:
+                    context['success'] = 0
+                    context['message'] = "This account is inactive."
+                    return Response(context, status=status.HTTP_403_FORBIDDEN)
+                else:
+                    context['message'] = "logged in successfully"
+                # Log the user in and generate tokens
+                login(request, auth_user)
+                tokens = general.get_tokens_for_user(auth_user)
+                context['data'] = { **tokens }
+
+            else:
+                context['success'] = 0
+                context['message'] = "Invalid credentials"
+                return Response(context, status=status.HTTP_401_UNAUTHORIZED)
+
+        except Exception as e:
+            context['success'] = 0
+            context['message'] = str(e)
+            return Response(context, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(context)
+
+
+class UserRegisterView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        context = {
+            "success": 1,
+            "message": "User created successful",
             "data": {},
         }
         try:
             req_body = request.data
-            validator = validators.ProjectValidator(data=req_body)
+            validator = validators.UserRegisterValidator(data=req_body)
             if not validator.is_valid():
                 raise SerializerError(validator.errors)
             req_params = validator.validated_data
-            models.Project.objects.create(owner = request.user,**req_params)
+            email_exist_check = models.CustomUser.objects.filter(Q(email=req_params['email']) | Q(username=req_params['username'])).first()
+            if email_exist_check:
+                raise Exception("This email or username has already been taken, please login.")           
+            models.CustomUser.objects.create_user(**req_params)
         except Exception as e:
             context['success'] = 0
             context['message'] = str(e)
         return Response(context)
     
-    def get(self, request):
-        context = {
-            "success": 1,
-            "message": "Project data",
-            "data": {},
-        }
-        try:
-            project_obj = models.Project.objects.filter(is_active=True)
-            serializer = serializers.ProjectSerializer(project_obj, many=True)
-            if not serializer.data:
-                raise Exception("No data found")
-            context['data']=serializer.data
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-
-    
-class Project(APIView):
+class UserView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request,id):
         context = {
             "success": 1,
-            "message": 'Project details fetched successfully.',
+            "message": 'Profile details fetched successfully.',
             "data": {}
         }
         try:
-            project_details = models.Project.objects.filter(is_active=True,id=id).first()
-            serializer = serializers.ProjectSerializer(project_details)
+            user_details = models.CustomUser.objects.filter(id=id).first()
+            serializer = serializers.UserProfileSerializer( user_details)
             context['data'] = serializer.data
         except Exception as e:
             context['success'] = 0
@@ -73,20 +106,20 @@ class Project(APIView):
     def put(self, request, id):
         context = {
             "success": 1,
-            "message": "Project data updated successfully.",
+            "message": "User data updated successfully.",
             "data": {}
         }
         try:
             req_data = request.data
-            validator = validators.ProjectValidator(data=req_data)
+            validator = validators.ProfileUpdateValidator(data=req_data)
             if not validator.is_valid():
                 raise SerializerError(validator.errors)
-            project = models.Project.objects.filter(is_active=True,id=id).first()
-            if not project:
-                raise Exception("Data not found")
+            user = models.CustomUser.objects.filter(id=id).first()
+            if not user:
+                raise Exception("Could not update the profile information, please try later.")
             for attr, value in validator.validated_data.items():
-                setattr(project, attr, value)
-            project.save() 
+                setattr(user, attr, value)
+            user.save() 
         except Exception as e:
             context['success'] = 0
             context['message'] = str(e)
@@ -95,221 +128,15 @@ class Project(APIView):
     def delete(self, request, id):
         context = {
             "success": 1,
-            "message": "Project deleted successfully.",
+            "message": "User deleted successfully.",
             "data": {}
         }
         try:
-            Project = models.Project.objects.filter(is_active=True, id=id).first()
-            if not Project:
-                raise Exception("Project does not exist")
-            Project.is_active=False
-            Project.save() 
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-
-
-class Tasks(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, id):
-        context = {
-            "success": 1,
-            "message": "Task created successful",
-            "data": {},
-        }
-        try:
-            req_body = request.data
-            validator = validators.TaskValidator(data=req_body)
-            if not validator.is_valid():
-                raise SerializerError(validator.errors)
-            req_params = validator.validated_data
-            if "assign_to" in req_params:
-                req_params["assign_to"]=models.CustomUser.objects.get(id=req_params["assign_to"])
-            req_params["project"]=models.Project.objects.get(id=id)
-            models.Task.objects.create(**req_params)
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-    def get(self, request,id):
-        context = {
-            "success": 1,
-            "message": "Project Tasks",
-            "data": {},
-        }
-        try:
-            project_obj = models.Task.objects.filter(is_active=True, project__id=id)
-            serializer = serializers.TaskSerializer(project_obj, many=True)
-            if not serializer.data:
-                raise Exception("No data found")
-            context['data']=serializer.data
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-
-    
-class Task(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request,id):
-        context = {
-            "success": 1,
-            "message": 'Task details fetched successfully.',
-            "data": {}
-        }
-        try:
-            task_details = models.Task.objects.filter(is_active=True,id=id).first()
-            serializer = serializers.TaskSerializer(task_details)
-            context['data'] = serializer.data
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-
-    def put(self, request, id):
-        context = {
-            "success": 1,
-            "message": "Task data updated successfully.",
-            "data": {}
-        }
-        try:
-            req_data = request.data
-            validator = validators.TaskValidator(data=req_data)
-            if not validator.is_valid():
-                raise SerializerError(validator.errors)
-            task = models.Task.objects.filter(is_active=True,id=id).first()
-            if not task:
-                raise Exception("Data not found")
-            for attr, value in validator.validated_data.items():
-                setattr(task, attr, value)
-            task.save() 
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-    def delete(self, request, id):
-        context = {
-            "success": 1,
-            "message": "Project deleted successfully.",
-            "data": {}
-        }
-        try:
-            task = models.Task.objects.filter(is_active=True, id=id).first()
-            if not task:
-                raise Exception("Task does not exist")
-            task.is_active=False
-            task.save() 
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-
-class Comments(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, id):
-        context = {
-            "success": 1,
-            "message": "Added comment on task successfully",
-            "data": {},
-        }
-        try:
-            req_body = request.data
-            validator = validators.CommentValidator(data=req_body)
-            if not validator.is_valid():
-                raise SerializerError(validator.errors)
-            req_params = validator.validated_data
-            req_params["user"]=request.user
-            req_params["task"]=models.Task.objects.get(id=id)
-            models.Comment.objects.create(**req_params)
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-    def get(self, request,id):
-        context = {
-            "success": 1,
-            "message": "Tasks comments",
-            "data": {},
-        }
-        try:
-            req_body = request.data
-            project_obj = models.Comment.objects.filter(is_active=True, task__id=id)
-            serializer = serializers.CommentSerializer(project_obj, many=True)
-            if not serializer.data:
-                raise Exception("No data found")
-            context['data']=serializer.data
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-
-    
-class Comment(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request,id):
-        context = {
-            "success": 1,
-            "message": 'Comment details fetched successfully.',
-            "data": {}
-        }
-        try:
-            comment = models.Comment.objects.filter(is_active=True,id=id).first()
-            serializer = serializers.CommentSerializer(comment)
-            context['data'] = serializer.data
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-
-    def put(self, request, id):
-        context = {
-            "success": 1,
-            "message": "Comment data updated successfully.",
-            "data": {}
-        }
-        try:
-            req_data = request.data
-            validator = validators.CommentValidator(data=req_data)
-            if not validator.is_valid():
-                raise SerializerError(validator.errors)
-            comment = models.Comment.objects.filter(is_active=True,id=id).first()
-            if not comment:
-                raise Exception("Data not found")
-            for attr, value in validator.validated_data.items():
-                setattr(comment, attr, value)
-            comment.save() 
-        except Exception as e:
-            context['success'] = 0
-            context['message'] = str(e)
-        return Response(context)
-    
-    def delete(self, request, id):
-        context = {
-            "success": 1,
-            "message": "Comment deleted successfully.",
-            "data": {}
-        }
-        try:
-            comment = models.Comment.objects.filter(is_active=True, id=id).first()
-            if not comment:
-                raise Exception("Comment does not exist")
-            comment.is_active=False
-            comment.save() 
+            user = models.CustomUser.objects.filter(id=id).first()
+            if not user:
+                raise Exception("User does not exist")
+            user.is_active=False
+            user.save() 
         except Exception as e:
             context['success'] = 0
             context['message'] = str(e)

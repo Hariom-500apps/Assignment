@@ -1,14 +1,11 @@
 from django.urls import path
 from .import views
 
-app_name='api'
+app_name='auth'
 
 urlpatterns = [
-    path('projects',views.Projects.as_view(),name='Projects'),
-    path('project/<str:id>', views.Project.as_view(), name='project'),
-    path('projects/<str:id>/tasks',views.Tasks.as_view(),name='tasks'),
-    path('task/<str:id>', views.Task.as_view(), name='task'),
-    path('tasks/<str:id>/comments',views.Comments.as_view(),name='comments'),
-    path('comment/<str:id>', views.Comment.as_view(), name='comment'),
+    path('login',views.UserLoginView.as_view(),name='login'),
+    path('register', views.UserRegisterView.as_view(), name='register'),
+    path('users/<str:id>',views.UserView.as_view(),name='users'),
    
 ]
